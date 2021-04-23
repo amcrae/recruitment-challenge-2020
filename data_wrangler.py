@@ -11,6 +11,8 @@ import time
 import requests
 import pandas as pd
 
+CACHE_TIME_SECONDS=300  # Five minutes
+
 def download_AEMO_month(Y, M, use_cached=True):
     ys = str(Y)
     ms = "%02d" % (M,)
@@ -25,7 +27,7 @@ def download_AEMO_month(Y, M, use_cached=True):
             fstat = os.stat(downloadedRecentFile)
             age_s = int(time.time()) - fstat.st_mtime
             print("Cached file age is %d s." % age_s, )
-            if age_s > 60:     # does not download more than once per minute.
+            if age_s > CACHE_TIME_SECONDS:
                 use_cached = False
         except FileNotFoundError:
             use_cached = False

@@ -11,7 +11,7 @@ import time
 import requests
 import pandas as pd
 
-CACHE_TIME_SECONDS=300  # Five minutes
+CACHE_TIME_SECONDS=3600  # No more than once per hour
 
 def download_AEMO_month(Y, M, use_cached=True):
     ys = str(Y)

@@ -47,7 +47,7 @@ As this may involve mathematical formulas it is in separate documents, as an Ope
 
 ## System Behaviour and Architecture
 
-TBD
+![System behaviour and architecture.png](System%20behaviour%20and%20architecture.png)
 
 ## Installation and setup
 

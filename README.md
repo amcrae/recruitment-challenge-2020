@@ -51,7 +51,11 @@ As this may involve mathematical formulas it is in separate documents, as an Ope
 
 ## Installation and setup
 
-TBD
+```
+$ git clone https://github.com/amcrae/recruitment-challenge-2020  
+$ pip3 install -r requirements.txt 
+```
+
 
 ## System Operation & User's Guide
 

@@ -127,6 +127,7 @@ df_projected=df_unpivoted[["Timestamp","Demand"]]
 aprilStart = pd.to_datetime('2020-04-01 00:00')
 mayStart = pd.to_datetime('2020-05-01 00:00')
 df_april_projected=df_projected[(aprilStart<df_projected["Timestamp"]) & (df_projected["Timestamp"]<mayStart) ]
+df_april_projected = df_april_projected.rename(columns={'Demand':'PROJECTED',})
 print( df_april_projected.info() )
 print( df_april_projected.head(50) )
 
@@ -141,7 +142,34 @@ df_april_dated.insert(
     pd.to_datetime(df_april_dated["SETTLEMENTDATE"],format='%Y/%m/%d %H:%M:%S') 
 )
 del df_april_dated["SETTLEMENTDATE"]
+df_april_dated = df_april_dated.rename(columns={'TOTALDEMAND':'APRIL2020'})
 print("April shape:", df_april_dated.shape, df_april_dated.index )
 print( df_april_dated.info() )
 print( df_april_dated.head(10) )
 
+df_combined=pd.merge(df_april_projected, df_april_dated, how='inner')
+print( df_combined.head(40) )
+
+ser_comparison = pd.DataFrame(df_combined,copy=True)
+ser_comparison["DIFFERENCE"] = ser_comparison["APRIL2020"] - ser_comparison["PROJECTED"]
+del ser_comparison["APRIL2020"]
+del ser_comparison["PROJECTED"]
+print( ser_comparison.head(40) )
+month_difference_MWh = sum(ser_comparison["DIFFERENCE"]*0.5) # Was 30minute intervals of MW.
+print("**** 👀 👓 😲 ****")
+print( "ANSWER: April 2020 was %d MWh more than historical projection." % month_difference_MWh)
+
+# Finally, the graph.
+df_combined.plot.line(
+    x="Timestamp",
+    title="Comparison of April2020 electricity consumption versus historical average",
+    figsize=(60,10)
+)
+# Graphing the difference has less intutive meaning than just showing both lines, IMO.
+"""
+ser_comparison.plot.line(
+    x="Timestamp",
+    title="Comparison of April2020 electricity consumption versus historical average",
+    figsize=(60,10)
+)
+"""

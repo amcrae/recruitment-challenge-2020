@@ -59,6 +59,9 @@ $ pip3 install -r requirements.txt
 
 ## System Operation & User's Guide
 
-TBD
+Just run the main script on a console which has a graphical desktop environment.
 
+```
+$ python3 compute.py
+```
 

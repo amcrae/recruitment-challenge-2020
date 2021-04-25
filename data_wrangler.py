@@ -1,19 +1,47 @@
 # -*- coding: utf-8 -*-
 """
-Data wrangler for Queensland electricty demand data.
-The output is in files, but the location of the file is returned.
+This data wrangler is for Queensland electricty demand data.
+The purpose of the wrangler is to provide data in an easy-to-use consistent form
+regardless of the differerent formats that the original data sources provided.
+
+In this case it gives recent month data and whole-of-year data in compatible formats,
+removing the discrepancy between pivoted and unpivoted source data files.
+This also identifies time blocks by their start, not by their end, so the numbers
+appear at timestamps 30mins earlier than when the period demand was originally "settled".
+
+Downloaded data is returned as Pandas DataFrames, but it is
+ also cached in files in a manner relatively opaque to the caller.
 
 Created on Fri Apr 23 08:23:35 2021
 @author: andrew
 """
+import sys
 import os
 import time
 import requests
 import pandas as pd
 
-CACHE_TIME_SECONDS=3600  # No more than once per hour
+supplied_AEMO_year_data_files={
+    2015: "data/QLD_Demand_2015.csv",
+    2016: "data/QLD_demand_2016.csv",
+    2017: "data/QLD_demand_2017.csv",
+    2018: "data/QLD_demand_2018.csv",
+    2019: "data/QLD_demand_2019.csv"
+}
 
-def download_AEMO_month(Y, M, use_cached=True):
+REQUEST_LOCKOUT_SECONDS=300  # Retrieval no more than once every five minutes
+
+
+def get_AEMO_demand_month(Y:int, M:int, use_cached:bool=True) -> pd.DataFrame :
+    """ Return recent AEMO demand data from an internally hardcoded web source.
+    Keyword arguments:
+        use_cached --  When True, try to use a cached file instead of doing a download.
+                    Note that the cached file will still be used if it
+                    has been downloaded recently (REQUEST_LOCKOUT_SECONDS) 
+                    for the purpose of not hitting the AEMO service too often.
+    """
+    # When the parameters are (2020,4) this fulfills requirement R2.
+    
     ys = str(Y)
     ms = "%02d" % (M,)
     monthcode = ys+ms
@@ -22,19 +50,18 @@ def download_AEMO_month(Y, M, use_cached=True):
     filename='QLD_demand_'+monthcode+'.csv'
     downloadedRecentFile=folder+os.sep+filename
     
-    if use_cached:
-        try:
-            fstat = os.stat(downloadedRecentFile)
-            age_s = int(time.time()) - fstat.st_mtime
-            print("Cached file age is %d s." % age_s, )
-            if age_s > CACHE_TIME_SECONDS:
-                use_cached = False
-        except FileNotFoundError:
-            use_cached = False
+    try:
+        fstat = os.stat(downloadedRecentFile)
+        age_s = int(time.time()) - fstat.st_mtime
+        print("Cached file age is %d s." % age_s, file=sys.stderr )
+        if not use_cached and age_s < REQUEST_LOCKOUT_SECONDS:
+            use_cached = True  # too soon.
+    except FileNotFoundError:
+        use_cached = False
     
     # Have determined whether file should be downloaded again.
     if use_cached:
-        print("...will use cached version.")
+        print("...will use cached version.", file=sys.stderr)
     else:
         AUTH_COOKIE_URL = 'https://aemo.com.au/energy-systems/electricity/national-electricity-market-nem/data-nem/aggregated-data'
         RECENT_DATA_URL = 'https://aemo.com.au/aemo/data/nem/priceanddemand/PRICE_AND_DEMAND_'+monthcode+'_QLD1.csv'
@@ -87,23 +114,129 @@ def download_AEMO_month(Y, M, use_cached=True):
         try: 
             res = requests.get(RECENT_DATA_URL, headers=new_headers, cookies=cookieJar)
             if 200 <= res.status_code <= 320:
-                print("Server status is OK")
+                print("Server status is OK", file=sys.stderr)
             else:
                 raise IOError("Cannot download recent month data, HTTP status "+str(res.status_code) )
             with open(downloadedRecentFile, 'wb') as fd:
                 for chunk in res.iter_content(chunk_size=4096):
                     fd.write(chunk)
-            print("downloaded finished without error.")
-            df = pd.read_csv(downloadedRecentFile, index_col="SETTLEMENTDATE")
-            if not ("TOTALDEMAND" in df.columns):
-                raise IOError("Unexpected data format in download.")
-            print("File format test OK.")
+            print("downloaded finished without error.", file=sys.stderr)
         except:
             raise IOError("Cannot download recent month data")
     
-    #Data is in file (cached or refreshed)
-    return {"Sucess":True, "filepath":downloadedRecentFile}
+    # Data definitely downloaded at this point.
+    df = pd.read_csv(downloadedRecentFile)
+    if not ("TOTALDEMAND" in df.columns):
+        raise IOError("Unexpected data format in download.")
+    print("File format test OK.", file=sys.stderr)
+    
+    #Add in Timestamp data type column for convenience and compatibility with the Year sets.
+    df.reset_index()
+    df.insert(
+        0,
+        "Timestamp",
+        pd.to_datetime(df["SETTLEMENTDATE"],format='%Y/%m/%d %H:%M:%S') 
+    )
+    # To keep the month sets consistent with the Years, the 0-based slots of the Years
+    # have to be emulated in the monthly data by moving the timestamps backwards 30mins.
+    df["Timestamp"] = df["Timestamp"] + + pd.Timedelta(minutes=-30)
+    
+    return df
+
+
+def get_AEMO_demand_year(year_ad:int) -> pd.DataFrame:
+    """Return a year of electricity demand in a convenient format similar to
+        what is returned by the recent month data function.
+        The columns will still have Year,Month,Day, but also a Minute column,
+        and are indexed by a new Timestamp column.
+    """
+    cached_file_path = supplied_AEMO_year_data_files[year_ad]
+    df_history = pd.read_csv(cached_file_path, index_col=("Year","Month","Day"))
+    
+    # R4.
+    # When trying to compare the different data sets it will be easier to
+    # convert the representations to the same time series format.
+    
+    # The historical projection will need un-pivoting plus generation 
+    # of new time codes to match the timeslot column they came from.
+    # Luckily there seems to be a built-in pandas function which does un-pivoting.
+    print("Unpivoting year projection...",file=sys.stderr)
+    
+    # For the longest time I could not figure out how to create a column derived 
+    # from multiple columns using the pure pandas syntax.
+    #  So it was back to (slow) Python iteration just to get the job done.
+    #for indexer,row in df_unpivoted.iterrows():
+    #    df_unpivoted.loc[indexer,'Timecode2'] = \
+    #    '2020-' + ("%02d" % row['Month']) + '-' + ("%02d" % row["Day"])  + ' ' \
+    #    +("%02d" % (row['Slot'] // 60)) + ':' + ("%02d" % (row['Slot'] % 60)) + ':00'
+    
+    # But that was not needed when I figured the approach that works in Pandas
+    # is to build the dataframe one column at a time, so no explicit loops are needed.
+    
+    #print(df_history.head(10))
+    #-- The stack() unpivots OK but creates a multi-level indexed Series that I can't use.
+    # df_history.set_index(['Month','Day'],inplace=True)  #Didn't really help.
+    ser_unpivoted = df_history.stack(dropna=False)
+    ser_unpivoted.index.set_names(['Year','Month','Day','Slot'],inplace=True)
+    # Turn slot numbers into minutes of the day.
+    ser_unpivoted.index = ser_unpivoted.index.map( lambda x: 
+        (int(x[0]), 
+         int(x[1]), 
+         int(x[2]), 
+         # BUGFIX: Make slot 0-based to prevent date rollover to nonexistent date (31 April, etc)
+         30*(int(x[3])-1))   
+    )
+    #print("=== ser_unpivoted ===",file=sys.stderr)
+    #print( ser_unpivoted.shape ,file=sys.stderr)
+    #print( ser_unpivoted.index ,file=sys.stderr)
+    #print( ser_unpivoted.head(10) ,file=sys.stderr)
+    
+    df_unpivoted = pd.DataFrame(ser_unpivoted,columns=["Demand"]).reset_index()
+    #print("=== df_unpivoted ===",file=sys.stderr)
+    #print( df_unpivoted.head(50) ,file=sys.stderr)
+    
+    # One column at a time is the Pandas way (?)
+    df_unpivoted['Hour'] = df_unpivoted['Slot'] // 60
+    df_unpivoted['Minute'] = df_unpivoted['Slot'] % 60
+    df_unpivoted.insert(
+        0, 
+        "Timestamp",
+        pd.to_datetime(df_unpivoted[['Year','Month','Day','Hour','Minute']]) 
+    )
+    
+    #--
+    # Unfortunately melt complains the index columns are not present when they clearly are. 
+    # It was once again StackOverflow to the rescue, suggesting 
+    # the mysterious "trick" needed was to "reset" (!!) the index prior to melt.
+    """
+    df_unpivoted = df_history.reset_index().melt(
+        id_vars=["Month","Day"], 
+        var_name="Slot",
+        value_name="DEMAND"
+    )
+    print(df_unpivoted.info())
+    """
+    # The result of melt was still a MultiIndex that I could not figure out how to use.
+    
+    # And sorting simply does nothing. Initially I had no idea why. 
+    # Possibly because when I first wrote this the Slots from melt were objects 
+    # that had not beeen cast to either strings or ints yet, so were not sortable.
+    #df_unpivoted.sort_index(axis=0, level=2, kind='quicksort', inplace=True)
+    #df_unpivoted.sort_index(axis=0, level=1, kind='mergesort', inplace=True)
+    #df_unpivoted = df_unpivoted.reset_index().sort_index(axis=0,level=1,kind='mergesort')
+
+    #Don't need this, it has been converted to the hour,minute,and timestamp
+    del df_unpivoted["Slot"]
+    
+    #print( type(df_unpivoted), df_unpivoted.shape, file=sys.stderr)
+    #print( df_unpivoted.columns )
+    #print( df_unpivoted.head(50), file=sys.stderr )
+    #print( df_unpivoted.tail(50) )
+    return df_unpivoted
 
 
 if __name__ == "__main__":
-    download_AEMO_month(2020,4)
+    tr = get_AEMO_demand_month(2020,4)
+    print( tr.info() )
+    print( tr.index )
+    print( tr.head(5) )

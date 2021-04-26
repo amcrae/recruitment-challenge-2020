@@ -51,9 +51,9 @@ print( df_averaged.shape )
 print( df_averaged.columns )
 print( df_averaged.head(50) )
 
-del df_history  #don't need this in memory any more.
+del df_history  # We don't need this in memory any more.
 
-# Throw away any unneeded columns and set Year of the projection to be 2020
+# Throw away any unneeded columns and set Year of the projection to be 2020.
 df_projected=df_averaged[['Month','Day','Hour','Minute','Demand']]
 df_projected['Year'] = 2020
 # Need to recalculate the timestamps since they were destroyed in the statistical abstraction.
@@ -63,7 +63,7 @@ df_projected.insert(
     pd.to_datetime(df_projected[['Year','Month','Day','Hour','Minute']]) 
 )
 df_projected.set_index(['Year','Month','Day','Hour','Minute'],inplace=True)
-#Save it because I created a requirement saying I would. R3.
+# Save it to meet requirement R3.
 df_projected.to_csv('data/QLD_demand_2020_projected.csv')
 
 # Filtering the projected average down to April only, for the comparison and diagramming.
@@ -92,7 +92,7 @@ print("~~~~~~~~~~~~~~~~~~~~~~~ 👀 👓 😲 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 print( "ANSWER: April 2020 was %+d MWh more than projected historical average." % month_difference_MWh)
 
 # Finally, the graph. R4.
-df_combined.reset_index(inplace=True)  #Really weird how indexed columns cease being available as data columns.
+df_combined.reset_index(inplace=True)  #Indexed columns cease being available as data columns.
 plt.close('all')
 plot1 = df_combined.plot.line(
     x="Timestamp",

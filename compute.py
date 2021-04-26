@@ -3,7 +3,15 @@
 Download April 2020 electricity consumption of Qld and compare it
  to the average of previous years for that state.
 
-Most twists, turns, false leads, and red herrings are preserved in comments.
+Implements most of requirement R5 except the 29 April figure is not regenerated.
+
+Dependencies:
+Package         Minimum     Also Tested
+-------------   --------    ------------
+numpy           1.18.5      1.20.0
+pandas          0.24.2      1.2.0
+requests        2.9.1       2.25.1
+-------------   --------    ------------
 
 Created on Fri Apr 23 13:29:41 2021
 @author: andrew
@@ -21,7 +29,6 @@ ListInt=List[int]
 
 # Req R2.
 df_april = get_AEMO_demand_month(2020,4)
-# print( df_april.describe() )
 
 # Req R3.
 def unionYearHistory(demand_years_ad:ListInt) -> pd.DataFrame:
@@ -46,7 +53,6 @@ print( df_averaged.head(50) )
 
 del df_history  #don't need this in memory any more.
 
-#print("=== df_projected ===")
 # Throw away any unneeded columns and set Year of the projection to be 2020
 df_projected=df_averaged[['Month','Day','Hour','Minute','Demand']]
 df_projected['Year'] = 2020
@@ -57,9 +63,7 @@ df_projected.insert(
     pd.to_datetime(df_projected[['Year','Month','Day','Hour','Minute']]) 
 )
 df_projected.set_index(['Year','Month','Day','Hour','Minute'],inplace=True)
-#print( df_projected.info() )
-#print( df_projected.head(50) )
-#Save it because I created a requirement saying I would.
+#Save it because I created a requirement saying I would. R3.
 df_projected.to_csv('data/QLD_demand_2020_projected.csv')
 
 # Filtering the projected average down to April only, for the comparison and diagramming.
@@ -68,18 +72,11 @@ mayStart = pd.to_datetime('2020-05-01 00:00')
 df_april_projected=df_projected[(aprilStart<df_projected["Timestamp"]) & (df_projected["Timestamp"]<mayStart) ]
 df_april_projected.set_index(['Timestamp'],inplace=True)
 df_april_projected = df_april_projected.rename(columns={'Demand':'PROJECTED'})
-#print( df_april_projected.info() )
-#print( df_april_projected.head(50) )
-
 
 # The April actuals are nearly in the right format, just have to drop some surplus columns
-#print( df_april.info() )
 df_april_actual = pd.DataFrame(df_april,columns=["Timestamp","TOTALDEMAND"])
 df_april_actual.set_index(["Timestamp"], inplace=True)
 df_april_actual = df_april_actual.rename(columns={'TOTALDEMAND':'APRIL2020'})
-#print("April shape:", df_april_actual.shape, df_april_actual.index )
-#print( df_april_actual.info() )
-#print( df_april_actual.head(10) )
 
 # Cannot easily compare until they are in the same DataFrame, so do a fast join on the indexed timestamps.
 df_combined=pd.merge(df_april_projected, df_april_actual, how='inner', left_index=True, right_index=True)
@@ -94,21 +91,24 @@ month_difference_MWh = sum(df_comparison["DIFFERENCE"]*0.5) # Was 30minute inter
 print("~~~~~~~~~~~~~~~~~~~~~~~ 👀 👓 😲 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 print( "ANSWER: April 2020 was %+d MWh more than projected historical average." % month_difference_MWh)
 
-# Finally, the graph.
+# Finally, the graph. R4.
 df_combined.reset_index(inplace=True)  #Really weird how indexed columns cease being available as data columns.
 plt.close('all')
-df_combined.plot.line(
+plot1 = df_combined.plot.line(
     x="Timestamp",
     title="Comparison of April2020 electricity consumption versus historical average",
-    figsize=(60,10)
+    figsize=(60,12)
 )
-plt.figure(1)
+f1=plt.figure(1)
+f1.savefig("figures/2020 April Comparison.png")     # R5.
+
 # Graphing the difference has less intutive meaning than just showing both lines, IMO.
 df_comparison.plot.line(
     x="Timestamp",
     title="Comparison of April2020 electricity consumption versus historical average",
-    figsize=(60,10)
+    figsize=(60,12)
 )
-plt.figure(2);
+f2 = plt.figure(2)
+f2.savefig("figures/2020 April Difference.png")     # R5.
 plt.show()
 print("Interactive figures have been displayed.")

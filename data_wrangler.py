@@ -162,20 +162,7 @@ def get_AEMO_demand_year(year_ad:int) -> pd.DataFrame:
     # Luckily there seems to be a built-in pandas function which does un-pivoting.
     print("Unpivoting year projection...",file=sys.stderr)
     
-    # For the longest time I could not figure out how to create a column derived 
-    # from multiple columns using the pure pandas syntax.
-    #  So it was back to (slow) Python iteration just to get the job done.
-    #for indexer,row in df_unpivoted.iterrows():
-    #    df_unpivoted.loc[indexer,'Timecode2'] = \
-    #    '2020-' + ("%02d" % row['Month']) + '-' + ("%02d" % row["Day"])  + ' ' \
-    #    +("%02d" % (row['Slot'] // 60)) + ':' + ("%02d" % (row['Slot'] % 60)) + ':00'
-    
-    # But that was not needed when I figured the approach that works in Pandas
-    # is to build the dataframe one column at a time, so no explicit loops are needed.
-    
-    #print(df_history.head(10))
-    #-- The stack() unpivots OK but creates a multi-level indexed Series that I can't use.
-    # df_history.set_index(['Month','Day'],inplace=True)  #Didn't really help.
+    #-- The stack() unpivots OK but creates a multi-level indexed Series.
     ser_unpivoted = df_history.stack(dropna=False)
     ser_unpivoted.index.set_names(['Year','Month','Day','Slot'],inplace=True)
     # Turn slot numbers into minutes of the day.
@@ -183,17 +170,11 @@ def get_AEMO_demand_year(year_ad:int) -> pd.DataFrame:
         (int(x[0]), 
          int(x[1]), 
          int(x[2]), 
-         # BUGFIX: Make slot 0-based to prevent date rollover to nonexistent date (31 April, etc)
+         # BUGFIX: Make slots 0-based to prevent date rollover to nonexistent date (eg 31 April)
          30*(int(x[3])-1))   
     )
-    #print("=== ser_unpivoted ===",file=sys.stderr)
-    #print( ser_unpivoted.shape ,file=sys.stderr)
-    #print( ser_unpivoted.index ,file=sys.stderr)
-    #print( ser_unpivoted.head(10) ,file=sys.stderr)
     
     df_unpivoted = pd.DataFrame(ser_unpivoted,columns=["Demand"]).reset_index()
-    #print("=== df_unpivoted ===",file=sys.stderr)
-    #print( df_unpivoted.head(50) ,file=sys.stderr)
     
     # One column at a time is the Pandas way (?)
     df_unpivoted['Hour'] = df_unpivoted['Slot'] // 60
@@ -203,35 +184,10 @@ def get_AEMO_demand_year(year_ad:int) -> pd.DataFrame:
         "Timestamp",
         pd.to_datetime(df_unpivoted[['Year','Month','Day','Hour','Minute']]) 
     )
-    
-    #--
-    # Unfortunately melt complains the index columns are not present when they clearly are. 
-    # It was once again StackOverflow to the rescue, suggesting 
-    # the mysterious "trick" needed was to "reset" (!!) the index prior to melt.
-    """
-    df_unpivoted = df_history.reset_index().melt(
-        id_vars=["Month","Day"], 
-        var_name="Slot",
-        value_name="DEMAND"
-    )
-    print(df_unpivoted.info())
-    """
-    # The result of melt was still a MultiIndex that I could not figure out how to use.
-    
-    # And sorting simply does nothing. Initially I had no idea why. 
-    # Possibly because when I first wrote this the Slots from melt were objects 
-    # that had not beeen cast to either strings or ints yet, so were not sortable.
-    #df_unpivoted.sort_index(axis=0, level=2, kind='quicksort', inplace=True)
-    #df_unpivoted.sort_index(axis=0, level=1, kind='mergesort', inplace=True)
-    #df_unpivoted = df_unpivoted.reset_index().sort_index(axis=0,level=1,kind='mergesort')
 
     #Don't need this, it has been converted to the hour,minute,and timestamp
     del df_unpivoted["Slot"]
     
-    #print( type(df_unpivoted), df_unpivoted.shape, file=sys.stderr)
-    #print( df_unpivoted.columns )
-    #print( df_unpivoted.head(50), file=sys.stderr )
-    #print( df_unpivoted.tail(50) )
     return df_unpivoted
 
 

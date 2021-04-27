@@ -49,7 +49,7 @@ df_averaged.reset_index(inplace=True)
 print("=== df_averaged === ")
 print( df_averaged.shape )
 print( df_averaged.columns )
-print( df_averaged.head(50) )
+print( df_averaged.head(50), "etc..." )
 
 del df_history  # We don't need this in memory any more.
 
@@ -83,13 +83,35 @@ df_combined=pd.merge(df_april_projected, df_april_actual, how='inner', left_inde
 print( df_combined.head(30), "etc..." )
 
 df_comparison = pd.DataFrame(df_combined,copy=True).reset_index()
-df_comparison ["DIFFERENCE"] = df_comparison["APRIL2020"] - df_comparison["PROJECTED"]
+df_comparison["DIFFERENCE"] = df_comparison["APRIL2020"] - df_comparison["PROJECTED"]
 del df_comparison["APRIL2020"]
 del df_comparison["PROJECTED"]
 print( df_comparison.head(30), "etc..." )
+
+# Bonus, investigate hypothesis that main cause of difference is 
+# an activity that reoccurs at particular times of day.
+df_hour_corr=df_comparison.reset_index()
+df_hour_corr["Hour"]=df_hour_corr["Timestamp"].map( lambda x: x.hour )
+df_hour_corr["ABSDIFF"]=abs(df_hour_corr["DIFFERENCE"])
+del df_hour_corr["Timestamp"]
+del df_hour_corr["index"]
+del df_hour_corr["DIFFERENCE"]
+hgroup = df_hour_corr.groupby(['Hour'])
+df_hour_corr= hgroup.aggregate(np.mean).nlargest(3,'ABSDIFF')
+df_hour_corr.rename(columns={'ABSDIFF':'AvgABSDIFF'},inplace=True)
+print("The hours of the day with the highest average absolute difference were:\n", df_hour_corr)
+top_hours=df_hour_corr.index
+hour_hypotheses={4:"Heating", 7:"Breakfast", 12:"Lunch", 15:"Cooling", 18:"Dinner"}
+for h,r in hour_hypotheses.items():
+    print( r, "_IS_" if (h in top_hours) else "is not", "a strong suspect for cause of difference." )
+
+# Answer the main question, how much more or less was April?
 month_difference_MWh = sum(df_comparison["DIFFERENCE"]*0.5) # Was 30minute intervals of MW.
 print("~~~~~~~~~~~~~~~~~~~~~~~ 👀 👓 😲 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 print( "ANSWER: April 2020 was %+d MWh more than projected historical average." % month_difference_MWh)
+
+# For possible use in javascript visualisations.
+df_combined.to_json('data/QLD_demand_202004_compared.json',orient='columns')
 
 # Finally, the graph. R4.
 df_combined.reset_index(inplace=True)  #Indexed columns cease being available as data columns.
